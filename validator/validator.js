@@ -1,4 +1,4 @@
-const joi = require('joi')
+const joi = require('joi');
 
 const contactSchema = joi.object({
 	name: joi.string().min(3),
