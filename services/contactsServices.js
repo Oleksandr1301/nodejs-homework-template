@@ -35,6 +35,5 @@ module.exports = {
   updateContact,
   updateStatusContact,
   deleteContact,
-
 };
 
