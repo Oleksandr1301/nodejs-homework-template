@@ -1,4 +1,4 @@
-const service = require('../controllers')
+const service = require('../services/contactsServices')
 const { contactValidator } = require('../validator/validator')
 
 const getAll = async (req, res) => {
