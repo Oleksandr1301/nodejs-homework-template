@@ -10,6 +10,7 @@ app.use(logger(formatsLogger))
 app.use(cors())
 app.use(express.json())
 app.use('/api/contacts', require('./routes/api/index'))
+app.use('/api/users', require('./routes/api/users'))
 
 app.use((req, res) => {
 	res.status(404).json({ message: 'Not found' })

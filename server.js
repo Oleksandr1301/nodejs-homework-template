@@ -24,10 +24,11 @@ connection
 		console.log('\nDatabase not running\n'.red, err.toString())
 		process.exit(1)
 	})
-
+	
 function signalHandler() {
 	mongoose.disconnect()
 	console.log('\nDatabase disconnected\n'.red)
+	process.exit()
 }
 
 process.on('SIGINT', signalHandler)
