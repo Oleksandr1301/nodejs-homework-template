@@ -9,8 +9,7 @@ const getContactById = async (contactId) => {
   return contactById || null;
 };
 
-
-const createContact = async ({ name, email, phone, favorite }) =>  {
+const createContact = async ({ name, email, phone, favorite }) => {
   return await Contact.create({ name, email, phone, favorite });
 };
 
@@ -26,7 +25,8 @@ const updateStatusContact = async (contactId, favorite) => {
   return await Contact.findByIdAndUpdate(contactId, { favorite });
 };
 
-const deleteContact = async (contactId) => await Contact.findByIdAndRemove(contactId);
+const deleteContact = async (contactId) =>
+  await Contact.findByIdAndRemove(contactId);
 
 module.exports = {
   getAllContacts,
@@ -36,4 +36,3 @@ module.exports = {
   updateStatusContact,
   deleteContact,
 };
-
