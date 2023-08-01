@@ -1,23 +1,26 @@
+const bcrypt = require("bcrypt");
 const { userValidator } = require("../validator/validator");
 const service = require("../services/user");
 const jwt = require("jsonwebtoken");
 const User = require("../services/schemas/users");
-const { HttpError } = require('../helpers/index');
+const { HttpError } = require("../helpers/index");
 require("dotenv").config();
 const gravatar = require("gravatar");
 const fs = require("fs/promises");
 const path = require("path");
 const Jimp = require("jimp");
+const { nanoid } = require("nanoid/non-secure");
+const { sendEmail } = require("../helpers/mail");
 const secret = process.env.SECRET;
 
-const avatarDir = path.resolve('public', 'avatars');
+const avatarDir = path.resolve("public", "avatars");
 
 const register = async (req, res, next) => {
   try {
     const { error } = userValidator(req.body);
-    if (error){
-    throw HttpError(409, 'Email in use');
-  }
+    if (error) {
+      throw HttpError(409, "Email in use");
+    }
     const { email, password, subscription } = req.body;
     const user = await User.findOne({ email });
 
@@ -34,22 +37,28 @@ const register = async (req, res, next) => {
       r: "pg",
       d: "mm",
     });
-
+    const createHashPassword = await bcrypt.hash(password, 10);
+    const verificationToken = nanoid();
     const newUser = await User.create({
       ...req.body,
-      password,
+      password: createHashPassword,
       subscription,
       avatarURL,
+      verificationToken,
     });
-    newUser.setPassword(password);
-    await newUser.save();
+
+   
+    await sendEmail({
+      to: newUser.email,
+      subject: `Welcome on board, ${newUser.email}`,
+      html: `To confirm your registration, please click on the link below: <a href="http://localhost:8080/api/users/verify/${verificationToken}">Click me</a>`,
+    });
     res.status(201).json({
       status: "success",
       code: 201,
       data: {
         message: "Registration successful",
       },
-      
     });
   } catch (error) {
     next(error);
@@ -59,13 +68,13 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   const { error } = userValidator(req.body);
   if (error) {
-    throw HttpError(400, 'Email or password is missing');
-  };
+    throw HttpError(400, "Email or password is missing");
+  }
 
   const { email, password } = req.body;
   const user = await User.findOne({ email });
 
-  if (!user || !user.validPassword(password)) {
+  if (!user || !user.validPassword(password) || !user.verify) {
     return res.status(401).json({
       status: "error",
       code: 401,
@@ -80,8 +89,8 @@ const login = async (req, res, next) => {
   };
 
   const token = jwt.sign(payload, secret, { expiresIn: "23h" });
-  user.setToken(token);
-  await user.save();
+ 
+  await User.findByIdAndUpdate(user._id, { token });
   res.status(200).json({
     status: "success",
     code: 200,
@@ -115,8 +124,8 @@ const current = async (req, res, next) => {
   try {
     const user = await service.getUser({ _id: req.user._id });
     if (!user) {
-    throw HttpError(409, 'Email in use');
-  } else {
+      throw HttpError(409, "Email in use");
+    } else {
       res.json({
         status: "success",
         code: 200,
@@ -144,14 +153,14 @@ const getUsers = async (req, res) => {
 const updateSubscription = async (req, res, next) => {
   try {
     const { error } = userValidator(req.body);
-    if (error){
-    throw HttpError(400, 'Avatar must be provided');
-  }
+    if (error) {
+      throw HttpError(400, "Avatar must be provided");
+    }
     const { subscription } = req.body;
     const { userId } = req.params;
 
     if (!subscription) {
-      throw HttpError(400, 'missing field subscription');
+      throw HttpError(400, "missing field subscription");
     }
     const user = await service.updateUserSubscription(userId, subscription);
 
@@ -168,7 +177,7 @@ const updateSubscription = async (req, res, next) => {
 
 const updateAvatar = async (req, res, next) => {
   if (!req.file) {
-    throw HttpError(400, 'Avatar must be provided');
+    throw HttpError(400, "Avatar must be provided");
   }
 
   const { _id } = req.user;
@@ -191,7 +200,7 @@ const updateAvatar = async (req, res, next) => {
 
   await fs.rename(tempUpload, publicUpload);
 
-  const avatarUrl = path.join('avatars', fileName);
+  const avatarUrl = path.join("avatars", fileName);
 
   await User.findByIdAndUpdate(_id, { avatarUrl });
 
@@ -205,8 +214,8 @@ const deleteUserByMail = async (req, res) => {
     const email = req.query.email;
     const userToRemove = await service.deleteUser(email);
     if (!userToRemove) {
-    throw HttpError(404, `Not found`);
-  } else {
+      throw HttpError(404, `Not found`);
+    } else {
       res.status(200).json({ message: "User deleted from data base" });
     }
   } catch (error) {
@@ -214,6 +223,56 @@ const deleteUserByMail = async (req, res) => {
   }
 };
 
+const verifyUserByToken = async (req, res) => {
+  try {
+    const token = req.params.verificationToken;
+    const user = await User.findOne({ verificationToken: token });
+    if (!user) {
+      throw HttpError(404, `Not found`);
+    } else {
+      await service.updateUserVerification(user.id);
+      res.status(200).json({ message: "Verification successful" });
+    }
+  } catch (error) {
+    console.log(`Error: ${error.message}`.red);
+  }
+};
+
+const resendVerificationMail = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    res.status(400).json({ message: "missing required field email" });
+  }
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return res.status(400).json({
+      status: "error",
+      code: 400,
+      message: "Incorrect email ",
+    });
+  }
+  if (user.validate) {
+    return res.status(400).json({
+      status: "error",
+      code: 400,
+      message: "Verification has already been passed",
+    });
+  }
+  if (!user.validate) {
+    await sendEmail({
+      to: email,
+      subject: `Welcome on board, ${email}`,
+      html: `To confirm your registration, please click on the link below: <a href="http://localhost:8080/api/users/verify/${user.verificationToken}">Click me</a>`,
+      text: `To confirm your registration, please open the link below: http://localhost:8080/api/users/verify/${user.verificationToken}`,
+    });
+    return res.status(400).json({
+      status: "error",
+      code: 400,
+      message: "Verification has already been passed",
+    });
+  }
+};
 module.exports = {
   register,
   login,
@@ -223,4 +282,6 @@ module.exports = {
   updateSubscription,
   updateAvatar,
   deleteUserByMail,
+  verifyUserByToken,
+  resendVerificationMail,
 };
